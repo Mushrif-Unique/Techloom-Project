@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum CartStatus {
+  ACTIVE
+  CHECKED_OUT
+}
+enum OrderStatus {
+  PENDING
+  RESERVED
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+enum ReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  TIMEOUT
+}
+model Product {
+  id String @id @default(uuid()) @db.Uuid
+  name String @db.VarChar(120)
+  description String? @db.VarChar(1000)
+  price Int
+  stock Int
+  version Int @default(0)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  cartItems CartItem[]
+  orderItems OrderItem[]
+  reservations Reservation[]
+}
+model Cart {
+  id String @id @default(uuid()) @db.Uuid
+  status CartStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  items CartItem[]
+  order Order?
+}
+model CartItem {
+  id String @id @default(uuid()) @db.Uuid
+  cartId String @db.Uuid
+  productId String @db.Uuid
+  quantity Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@unique([cartId, productId])
+}
+model Order {
+  id String @id @default(uuid()) @db.Uuid
+  cartId String @unique @db.Uuid
+  status OrderStatus @default(PENDING)
+  totalAmount Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Restrict)
+  items OrderItem[]
+  reservations Reservation[]
+  payment Payment?
+  @@index([createdAt])
+}
+model OrderItem {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @db.Uuid
+  productId String @db.Uuid
+  productNameSnapshot String @db.VarChar(120)
+  unitPrice Int
+  quantity Int
+  subtotal Int
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@unique([orderId, productId])
+}
+model Reservation {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @db.Uuid
+  productId String @db.Uuid
+  quantity Int
+  status ReservationStatus @default(ACTIVE)
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@unique([orderId, productId])
+  @@index([status, expiresAt])
+}
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @unique @db.Uuid
+  idempotencyKey String @unique @db.Uuid
+  outcome String @db.VarChar(10)
+  status PaymentStatus @default(PENDING)
+  providerReference String? @db.VarChar(120)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+}

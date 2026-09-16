@@ -1,10 +1,91 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { api, db, databaseSuite, reserved, makeDue } from '../helpers.js';
+import {
+  api,
+  db,
+  databaseSuite,
+  reserved,
+  makeDue,
+  cartFor,
+  pay,
+} from '../helpers.js';
+import { expireBatch } from '../../src/jobs/expiration.js';
 import { env } from '../../src/config/env.js';
 import { startExpirationWorker } from '../../src/jobs/expiration.js';
 databaseSuite();
 describe('operational safeguards', () => {
+  it('schedules near the deadline even with a long configured sweep interval', async () => {
+    const { product, order } = await reserved();
+    await db.$executeRaw`UPDATE "Reservation" SET "createdAt" = date_trunc('milliseconds', clock_timestamp()) - interval '299 seconds', "expiresAt" = date_trunc('milliseconds', clock_timestamp()) + interval '1 second' WHERE "orderId" = ${order.id}::uuid`;
+    const previous = env.EXPIRY_INTERVAL_MS;
+    env.EXPIRY_INTERVAL_MS = 30000;
+    const stop = startExpirationWorker();
+    try {
+      await expect
+        .poll(
+          async () =>
+            (await db.product.findUnique({ where: { id: product.id } })).stock,
+          { timeout: 5000, interval: 100 },
+        )
+        .toBe(10);
+    } finally {
+      await stop();
+      env.EXPIRY_INTERVAL_MS = previous;
+    }
+  });
+  it.each(['product', 'catalog', 'cart', 'dashboard'])(
+    'releases due stock on %s reads without a worker',
+    async (view) => {
+      const { product, order, cart } = await reserved();
+      await makeDue(order.id);
+      const paths = {
+        product: `/api/products/${product.id}`,
+        catalog: '/api/products',
+        cart: `/api/carts/${cart.id}`,
+        dashboard: '/api/dashboard',
+      };
+      const response = await api.get(paths[view]);
+      expect(response.status).toBe(200);
+      const stock =
+        view === 'product'
+          ? response.body.data.stock
+          : view === 'catalog'
+            ? response.body.data[0].stock
+            : view === 'cart'
+              ? response.body.data.items[0].product.stock
+              : response.body.data.availableStock;
+      expect(stock).toBe(10);
+      expect(
+        (await db.order.findUnique({ where: { id: order.id } })).status,
+      ).toBe('EXPIRED');
+    },
+  );
+  it('concurrent new checkouts reclaim expired stock exactly once while payment and cleanup race', async () => {
+    const { product, order } = await reserved(1, 1);
+    const carts = await Promise.all(
+      Array.from({ length: 5 }, () => cartFor(product.id)),
+    );
+    await makeDue(order.id);
+    const [results] = await Promise.all([
+      Promise.all(
+        carts.map((cart) => api.post(`/api/carts/${cart.id}/checkout`)),
+      ),
+      pay(order.id),
+      expireBatch(),
+      api.get(`/api/products/${product.id}`),
+    ]);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(
+      results.filter(
+        (r) => r.status === 409 && r.body.error.code === 'INSUFFICIENT_STOCK',
+      ),
+    ).toHaveLength(4);
+    expect(
+      (await db.product.findUnique({ where: { id: product.id } })).stock,
+    ).toBe(0);
+    expect(await db.payment.count()).toBe(0);
+    expect(await db.reservation.count({ where: { status: 'ACTIVE' } })).toBe(1);
+  });
   it('the scheduled worker releases expired stock without an HTTP access', async () => {
     const { product, order } = await reserved();
     const interval = env.EXPIRY_INTERVAL_MS;

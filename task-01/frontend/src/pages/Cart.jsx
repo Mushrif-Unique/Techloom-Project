@@ -63,6 +63,11 @@ function ActiveCart({ id }) {
   if (cart.status !== 'ACTIVE')
     return (
       <Empty title="This cart has been checked out">
+        {cart.order && (
+          <Link className="button secondary" to={`/orders/${cart.order.id}`}>
+            View existing order
+          </Link>
+        )}
         <button className="button primary" onClick={clearCart}>
           Start a new cart
         </button>

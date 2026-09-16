@@ -6,6 +6,21 @@ export async function reserveInventory(tx, items) {
     items.map((item) => item.productId),
   );
   const byId = new Map(products.map((product) => [product.id, product]));
+  // A reservation can expire while checkout waits for product locks. Roll back
+  // before taking order locks, then let checkout release it and retry safely.
+  const now = (await tx.$queryRaw`SELECT clock_timestamp() AS now`)[0].now;
+  const due = await tx.reservation.findFirst({
+    where: {
+      productId: { in: items.map((item) => item.productId) },
+      status: 'ACTIVE',
+      expiresAt: { lte: now },
+    },
+  });
+  if (due)
+    throw new AppError(
+      'INVENTORY_EXPIRY_RETRY',
+      'Expired inventory needs restoration.',
+    );
   for (const item of items) {
     const product = byId.get(item.productId);
     if (!product?.isActive || product.stock < item.quantity) {

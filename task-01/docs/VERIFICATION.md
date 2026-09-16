@@ -1,6 +1,28 @@
 # Verification and requirement checklist
 
-Verified locally on 15 September 2026 against real PostgreSQL 17.
+## Current assessment fixes — 16 September 2026
+
+- Local startup follow-up: clean PostgreSQL stop/start, repeated-start reuse, automatic `predev`, API health (database connected), frontend HTTP 200, and database survival after stopping the dev terminal passed. The Windows database launcher uses `pg_ctl`; connection checks avoid relying solely on PID visibility across Windows security contexts.
+
+- All 96 tests passed: 46 unit and 50 PostgreSQL integration/concurrency tests, using an isolated temporary database that was removed afterward.
+- Duplicate checkout/payment submissions return HTTP 409; concurrent submissions still create exactly one order/payment and settle stock once.
+- Product, catalog, cart and dashboard reads restore already-expired inventory without waiting for a worker. Checkout also recovers inventory that expires during a product-lock wait.
+- A deadline-aware worker restores stock without HTTP traffic, including with a configured 30-second sweep interval. Idle discovery is capped at one second.
+- Expiry, payment, concurrent checkouts and background cleanup races preserve stock. Database lock waits and process outages can still delay physical restoration; exact zero-delay execution is not claimed.
+- ESLint and backend/frontend production builds passed. Existing environment file hashes remained unchanged; no application database reset or migration was performed.
+- Vercel SPA rewrites are supplied. Public Neon/Railway/Vercel deployment and live browser acceptance checks remain pending.
+
+## Historical verification
+
+Verified on 16 September 2026 against native PostgreSQL 17. All 89 tests passed after removal. Existing data was transferred with exact row hashes matching all seven app tables and migration history. Backups are in the ignored .local/backups directory. Browser and responsive checks below are historical observations from before the infrastructure change.
+
+## Native runtime checks
+
+- Graceful database stop/start succeeded; all original rows still matched the migration hashes afterward.
+- API health returned connected; product listing returned all seven preserved products.
+- Compiled frontend HTML, JavaScript and CSS served successfully; /products and /orders returned the SPA entry point. These are HTTP smoke checks, not browser interaction tests.
+- Windows sandbox restrictions prevent Vite development dependency optimization here. Production compilation succeeded. Native configuration loading is enabled in Vite/Vitest commands.
+- Old project containers are stopped. The original database volume and ignored SQL/custom backups remain as recovery copies.
 
 ## Results
 
@@ -15,8 +37,7 @@ Verified locally on 15 September 2026 against real PostgreSQL 17.
 - **Security:** invalid inputs, malformed JSON, oversized payloads, configured staff-key checks, exact CORS origin, and hidden powered-by header passed.
 - **Build:** backend Prisma generation/syntax check and frontend Vite production compilation passed.
 - **Quality:** ESLint and Prettier checks passed after formatting corrections.
-- **Dependencies:** clean lockfile installation reported zero known npm audit vulnerabilities, including development dependencies.
-- **Containers:** frontend/backend images built successfully; PostgreSQL, API and Nginx containers reported healthy.
+- **Dependencies:** npm audit reported zero known vulnerabilities, including development dependencies.
 - **Browser:** development UI verified product browsing, adding an item, quantity changes, checkout, five-minute countdown, payment success and paid-order cancellation. UI displayed PAID/CONSUMED followed by CANCELLED/RELEASED; catalog stock returned from 46 to 48 for the mouse.
 - **Responsive:** the order page was checked at a 390 px viewport with no horizontal document overflow.
 
@@ -52,18 +73,16 @@ Verified locally on 15 September 2026 against real PostgreSQL 17.
 | Rollback safety                               | [x]    | Database-trigger failure injection                                        |
 | Input validation                              | [x]    | Strict Zod validation and API tests                                       |
 | Security middleware                           | [x]    | Helmet, CORS, limits, error handling, staff-key tests                     |
-| Environment variable protection               | [x]    | Ignored environment files, Docker exclusions, no secret VITE settings     |
+| Environment variable protection               | [x]    | Ignored environment files, no secret VITE settings                        |
 | Concurrency tests                             | [x]    | Dedicated concurrency directory                                           |
 | Payment idempotency tests                     | [x]    | Same/different keys, payload mismatch, cross-order reuse                  |
 | Expiration race tests                         | [x]    | Expired and near-boundary races; lock-wait regression                     |
-| Docker support                                | [x]    | Built images and healthy Compose services                                 |
 | README documentation                          | [x]    | Setup, API, lifecycle, security, diagrams, limitations                    |
-| Production build succeeds                     | [x]    | Local and Docker production builds                                        |
-| Public deployment configuration ready         | [x]    | Independent containers/static build, SSL/pool/health/migration guidance   |
+| Production build succeeds                     | [x]    | Native Node.js production builds                                          |
+| Public deployment configuration ready         | [x]    | Independent Node.js API/static build, SSL/pool/health/migration guidance  |
 
 ## Pending external verification
 
-- [ ] Final browser inspection of the **Docker-served** frontend at http://localhost:8080. Automatic approval review blocked this navigation, first citing an account usage limit and then retaining the previous block. No alternative browser route was used to bypass it. Container build and health checks passed.
 - [ ] Actual public deployment and public-URL verification. No cloud hosting account, managed PostgreSQL credentials or domain was provided. Configuration is ready; publishing is not claimed.
 - [ ] Execute the committed GitHub Actions workflow on a remote repository. Equivalent local checks passed, but no remote CI run is claimed.
 
@@ -72,10 +91,9 @@ Verified locally on 15 September 2026 against real PostgreSQL 17.
 ```sh
 npm ci
 npm run setup
-docker compose up -d --wait db
+npm run db:start
 npm run db:generate
 npm run db:migrate
-docker compose exec -T db createdb -U pos pos_test
 npm run db:test:migrate
 npm run db:seed
 npm test
@@ -86,6 +104,6 @@ npm run build
 npm audit
 ```
 
-The test database must end in _test and is emptied between cases. Running createdb is needed only once. The application's development database is separate and remains intact.
+The test database must end in _test and is emptied between cases. Native startup creates missing databases automatically. The application's development database is separate and remains intact.
 
 These results demonstrate the tested scenarios and database invariants; they do not substitute for workload-specific load testing or a security review for real retail use. The application is a shared synthetic-data assessment sandbox with a mock gateway.

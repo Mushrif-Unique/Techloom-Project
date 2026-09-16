@@ -24,9 +24,12 @@ export async function api(path, { method = 'GET', body, key, signal } = {}) {
     );
   }
   const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.success)
-    throw new Error(
+  if (!response.ok || !result?.success) {
+    const error = new Error(
       result?.error?.message ?? 'The request could not be completed.',
     );
+    error.code = result?.error?.code;
+    throw error;
+  }
   return result.data;
 }

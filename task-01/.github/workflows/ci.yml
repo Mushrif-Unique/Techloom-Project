@@ -12,8 +12,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run setup
-      - run: docker compose up -d --wait db
-      - run: docker compose exec -T db createdb -U pos pos_test
+      - run: npm run db:start
+      - run: npm run db:status
       - run: npm run db:generate
       - run: npm run db:migrate
       - run: npm run db:test:migrate
@@ -26,4 +26,4 @@ jobs:
       - run: npm audit --omit=dev
       - name: Stop project services
         if: always()
-        run: docker compose down
+        run: npm run db:stop

@@ -1,5 +1,7 @@
 import 'dotenv/config';
 process.env.NODE_ENV = 'test';
+// Tests explicitly exercise authentication separately from shared fixtures.
+process.env.ADMIN_API_KEY = '';
 process.env.PORT ||= '4000';
 process.env.FRONTEND_URL ||= 'http://localhost:5173';
 process.env.LOG_LEVEL = 'silent';

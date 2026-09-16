@@ -22,27 +22,39 @@ export async function expireBatch() {
   return expired;
 }
 export function startExpirationWorker() {
-  let running = false;
+  let stopped = false;
+  let timer;
   let pending = Promise.resolve();
   const tick = () => {
-    if (running) return;
-    running = true;
-    pending = expireBatch()
-      .catch((error) =>
-        logger.error(
-          { event: 'expiration_error', code: error.code },
-          'Expiration batch failed',
-        ),
-      )
-      .finally(() => {
-        running = false;
-      });
+    pending = (async () => {
+      let delay = Math.min(env.EXPIRY_INTERVAL_MS, 1000);
+      try {
+        // Drain overdue batches, then schedule against the next database deadline.
+        while (!stopped && (await expireBatch()) === 100) {
+          /* next batch */
+        }
+        if (stopped) return;
+        const [next] =
+          await db.$queryRaw`SELECT EXTRACT(EPOCH FROM (MIN("expiresAt") - clock_timestamp())) * 1000 AS delay FROM "Reservation" WHERE status = 'ACTIVE'`;
+        if (next.delay !== null)
+          delay = Math.max(1, Math.min(delay, Number(next.delay)));
+      } finally {
+        if (!stopped) {
+          timer = setTimeout(tick, delay);
+          timer.unref();
+        }
+      }
+    })().catch((error) =>
+      logger.error(
+        { event: 'expiration_error', code: error.code },
+        'Expiration batch failed',
+      ),
+    );
   };
-  const timer = setInterval(tick, env.EXPIRY_INTERVAL_MS);
-  timer.unref();
   tick();
   return async () => {
-    clearInterval(timer);
+    stopped = true;
+    clearTimeout(timer);
     await pending;
   };
 }

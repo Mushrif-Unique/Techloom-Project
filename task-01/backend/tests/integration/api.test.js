@@ -177,7 +177,9 @@ describe('payments, expiration and cancellation', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.order.status).toBe(status);
     expect(response.body.data.order.reservations[0].status).toBe(reservation);
-    expect((await pay(order.id, outcome, key)).body.data.replayed).toBe(true);
+    const duplicate = await pay(order.id, outcome, key);
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.error.code).toBe('DUPLICATE_PAYMENT');
     expect((await db.product.findUnique({ where: { id: p.id } })).stock).toBe(
       stock,
     );

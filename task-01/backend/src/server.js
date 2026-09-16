@@ -24,7 +24,15 @@ try {
   server = app.listen(env.PORT, () =>
     logger.info({ port: env.PORT }, 'POS API ready'),
   );
-  server.on('error', () => shutdown('server_error', 1));
+  server.on('error', (error) => {
+    logger.error(
+      { event: 'server_error', code: error.code, port: env.PORT },
+      error.code === 'EADDRINUSE'
+        ? 'API port is already in use. Stop the existing development server before starting another.'
+        : 'Could not start the HTTP server.',
+    );
+    void shutdown('server_error', 1);
+  });
 } catch {
   logger.error(
     { event: 'startup_error' },

@@ -1,17 +1,23 @@
 import { db } from '../config/db.js';
 import { transaction, lockProducts } from '../repositories/transactions.js';
 import { AppError, requireValue } from '../utils/errors.js';
-export const listProducts = () =>
-  db.product.findMany({ orderBy: { createdAt: 'asc' }, take: 1000 });
-export const getProduct = async (id) =>
-  requireValue(
+import { releaseDueInventory } from './orders.js';
+export const listProducts = async () => {
+  await releaseDueInventory();
+  return db.product.findMany({ orderBy: { createdAt: 'asc' }, take: 1000 });
+};
+export const getProduct = async (id) => {
+  await releaseDueInventory();
+  return requireValue(
     await db.product.findUnique({ where: { id } }),
     'PRODUCT_NOT_FOUND',
     'Product not found.',
   );
+};
 export const createProduct = (data) => db.product.create({ data });
-export const updateProduct = (id, input) =>
-  transaction(async (tx) => {
+export const updateProduct = async (id, input) => {
+  await releaseDueInventory();
+  return transaction(async (tx) => {
     const product = requireValue(
       (await lockProducts(tx, [id]))[0],
       'PRODUCT_NOT_FOUND',
@@ -28,4 +34,5 @@ export const updateProduct = (id, input) =>
       data: { ...data, version: { increment: 1 } },
     });
   });
+};
 export const deactivateProduct = (id) => updateProduct(id, { isActive: false });

@@ -77,6 +77,17 @@ export function OrderDetail() {
       sessionStorage.removeItem(`payment:${id}`);
       notify(`Mock payment: ${result.payment.status.toLowerCase()}.`);
     } catch (error) {
+      if (
+        [
+          'DUPLICATE_PAYMENT',
+          'ORDER_ALREADY_PAID',
+          'INVALID_ORDER_TRANSITION',
+          'RESERVATION_EXPIRED',
+        ].includes(error.code)
+      ) {
+        setPending(null);
+        sessionStorage.removeItem(`payment:${id}`);
+      }
       notify(error.message, 'error');
     } finally {
       await reload();

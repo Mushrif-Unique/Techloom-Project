@@ -21,11 +21,10 @@ export async function payOrder(id, outcome, idempotencyKey) {
           'IDEMPOTENCY_KEY_REUSED',
           'This key belongs to a different payment request.',
         );
-      return {
-        order: await readOrder(tx, id),
-        payment: previous,
-        replayed: true,
-      };
+      throw new AppError(
+        'DUPLICATE_PAYMENT',
+        'This payment has already been processed. Refresh the order to view its result.',
+      );
     }
     if (await expireIfDue(tx, order))
       return { expired: true, order: await readOrder(tx, id) };

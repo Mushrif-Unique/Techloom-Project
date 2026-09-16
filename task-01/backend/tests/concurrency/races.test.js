@@ -13,6 +13,30 @@ import {
 import { expireBatch } from '../../src/jobs/expiration.js';
 databaseSuite();
 describe('real PostgreSQL contention', () => {
+  it('reclaims stock that expires while checkout waits for a product lock', async () => {
+    const { product: p, order } = await reserved(1, 1);
+    const cart = await cartFor(p.id);
+    await db.$executeRaw`UPDATE "Reservation" SET "createdAt" = date_trunc('milliseconds', clock_timestamp()) - interval '299 seconds', "expiresAt" = date_trunc('milliseconds', clock_timestamp()) + interval '1 second' WHERE "orderId" = ${order.id}::uuid`;
+    let locked;
+    const ready = new Promise((resolve) => {
+      locked = resolve;
+    });
+    const holder = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Product" WHERE id = ${p.id}::uuid FOR UPDATE`;
+      locked();
+      await tx.$queryRaw`SELECT pg_sleep(1.3)::text`;
+    });
+    await ready;
+    const response = await api.post(`/api/carts/${cart.id}/checkout`);
+    await holder;
+    expect(response.status).toBe(200);
+    expect(
+      (await db.order.findUnique({ where: { id: order.id } })).status,
+    ).toBe('EXPIRED');
+    expect((await db.product.findUnique({ where: { id: p.id } })).stock).toBe(
+      0,
+    );
+  });
   it.each([
     [5, 20],
     [1, 10],
@@ -54,8 +78,12 @@ describe('real PostgreSQL contention', () => {
         api.post(`/api/carts/${cart.id}/checkout`),
       ),
     );
-    expect(results.every((r) => r.status === 200)).toBe(true);
-    expect(new Set(results.map((r) => r.body.data.id)).size).toBe(1);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(
+      results.filter(
+        (r) => r.status === 409 && r.body.error.code === 'DUPLICATE_ORDER',
+      ),
+    ).toHaveLength(9);
     expect(await db.order.count()).toBe(1);
     expect((await db.product.findUnique({ where: { id: p.id } })).stock).toBe(
       4,
@@ -69,8 +97,12 @@ describe('real PostgreSQL contention', () => {
       const results = await Promise.all(
         Array.from({ length: 10 }, () => pay(order.id, outcome, key)),
       );
-      expect(results.every((r) => r.status === 200)).toBe(true);
-      expect(results.filter((r) => !r.body.data.replayed)).toHaveLength(1);
+      expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+      expect(
+        results.filter(
+          (r) => r.status === 409 && r.body.error.code === 'DUPLICATE_PAYMENT',
+        ),
+      ).toHaveLength(9);
       expect(await db.payment.count()).toBe(1);
       expect((await db.product.findUnique({ where: { id: p.id } })).stock).toBe(
         outcome === 'success' ? 8 : 10,

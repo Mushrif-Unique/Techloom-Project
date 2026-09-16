@@ -8,6 +8,17 @@ import {
 import { settleReservations } from './inventory.js';
 import { transition } from '../constants/lifecycle.js';
 import { logger } from '../utils/logger.js';
+// Complete expiry in its own transactions before an inventory operation begins.
+// Keep the order -> product lock order used by payment and cancellation.
+export async function releaseDueInventory() {
+  const rows =
+    await db.$queryRaw`SELECT DISTINCT "orderId" FROM "Reservation" WHERE status = 'ACTIVE' AND "expiresAt" <= clock_timestamp() ORDER BY "orderId"`;
+  for (const row of rows) {
+    await transaction(async (tx) =>
+      expireIfDue(tx, await lockOrder(tx, row.orderId)),
+    );
+  }
+}
 export async function expireIfDue(tx, order) {
   if (order.status !== 'RESERVED') return false;
   const now = await databaseNow(tx);
@@ -60,6 +71,7 @@ export async function cancelOrder(id) {
   return result;
 }
 export async function dashboard() {
+  await releaseDueInventory();
   const recent = await db.order.findMany({
     orderBy: { createdAt: 'desc' },
     take: 6,

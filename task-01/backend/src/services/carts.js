@@ -1,12 +1,14 @@
 import { db } from '../config/db.js';
 import { transaction, lockCart } from '../repositories/transactions.js';
 import { AppError, requireValue } from '../utils/errors.js';
+import { releaseDueInventory } from './orders.js';
 export const createCart = () => db.cart.create({ data: {} });
 async function cartView(tx, id) {
   const cart = requireValue(
     await tx.cart.findUnique({
       where: { id },
       include: {
+        order: { select: { id: true } },
         items: { include: { product: true }, orderBy: { createdAt: 'asc' } },
       },
     }),
@@ -23,7 +25,10 @@ async function cartView(tx, id) {
     totalAmount: items.reduce((sum, item) => sum + item.subtotal, 0),
   };
 }
-export const getCart = (id) => cartView(db, id);
+export const getCart = async (id) => {
+  await releaseDueInventory();
+  return cartView(db, id);
+};
 export const changeCart = (id, action, data) =>
   transaction(async (tx) => {
     const cart = await lockCart(tx, id);

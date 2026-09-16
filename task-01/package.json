@@ -10,7 +10,8 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "node node_modules/concurrently/dist/bin/concurrently.js -n api,web -c cyan,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "predev": "node scripts/local-db.js start",
+    "dev": "node node_modules/concurrently/dist/bin/concurrently.js --kill-others -n api,web -c cyan,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build --workspaces",
     "lint": "node node_modules/eslint/bin/eslint.js .",
     "format": "node node_modules/prettier/bin/prettier.cjs --write .",
@@ -21,15 +22,20 @@
     "db:migrate": "npm run db:migrate -w backend",
     "db:seed": "npm run db:seed -w backend",
     "setup": "node scripts/setup-local.js",
-    "db:test:migrate": "node scripts/test-migrate.js"
+    "db:test:migrate": "node scripts/test-migrate.js",
+    "db:start": "node scripts/local-db.js start",
+    "db:stop": "node scripts/local-db.js stop",
+    "db:status": "node scripts/local-db.js status"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "concurrently": "^9.2.1",
+    "embedded-postgres": "17.10.0-beta.17",
     "eslint": "^9.39.0",
-    "globals": "^16.5.0",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "prettier": "^3.6.2",
-    "concurrently": "^9.2.1"
+    "globals": "^16.5.0",
+    "pg": "8.23.0",
+    "prettier": "^3.6.2"
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0",

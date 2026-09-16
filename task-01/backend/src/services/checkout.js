@@ -8,11 +8,31 @@ import { reserveInventory } from './inventory.js';
 import { transition, RESERVATION_MS } from '../constants/lifecycle.js';
 import { AppError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { releaseDueInventory } from './orders.js';
 export async function checkout(cartId) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await checkoutAttempt(cartId);
+    } catch (error) {
+      if (error.code !== 'INVENTORY_EXPIRY_RETRY') throw error;
+    }
+  }
+  throw new AppError(
+    'DATABASE_BUSY',
+    'Inventory is changing. Please retry checkout.',
+    503,
+  );
+}
+async function checkoutAttempt(cartId) {
+  await releaseDueInventory();
   const result = await transaction(async (tx) => {
     const cart = await lockCart(tx, cartId);
     const existing = await tx.order.findUnique({ where: { cartId } });
-    if (existing) return readOrder(tx, existing.id);
+    if (existing)
+      throw new AppError(
+        'DUPLICATE_ORDER',
+        'This cart already has an order. Open Orders to view it.',
+      );
     if (cart.status !== 'ACTIVE')
       throw new AppError(
         'CART_ALREADY_CHECKED_OUT',

@@ -1,5 +1,11 @@
 # Counter · POS Order & Inventory System
 
+**Frontend Deployment (Vercel):** https://techloom-task-01-rho.vercel.app/
+
+**Backend API / Health:** https://techloom-project-production.up.railway.app/api/health
+
+**GitHub Repository:** https://github.com/Mushrif-Unique/Techloom-Project/tree/main/task-01
+
 **Concurrency-safe order processing, built for an internship assessment.**
 
 Counter is a React point-of-sale workspace backed by Express, Prisma and PostgreSQL. The database protects inventory when many customers reserve the same product, retry payment, cancel orders, or race against reservation expiry.

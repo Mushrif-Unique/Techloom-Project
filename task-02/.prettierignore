@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+.local
+package-lock.json
+backend/package-lock.json
+frontend/package-lock.json
+frontend/public/images
+backend/prisma/migrations
+backend/prisma/schema.prisma

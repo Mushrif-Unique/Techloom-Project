@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CheckoutStatus {
+  RESERVED
+  PAYMENT_PROCESSING
+  COMPLETED
+  PAYMENT_FAILED
+  PAYMENT_TIMEOUT
+  EXPIRED
+  CANCELLED
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  TIMEOUT
+}
+
+enum OrderStatus {
+  CONFIRMED
+  FAILED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum GatewayScenario {
+  SUCCESS
+  ORDER_FAILURE
+  FAILED
+  TIMEOUT
+}
+
+model User {
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String
+  email        String            @unique
+  passwordHash String
+  createdAt    DateTime          @default(now())
+  cart         Cart?
+  checkouts    CheckoutSession[]
+  orders       Order[]
+}
+
+model Product {
+  id               String             @id @default(uuid()) @db.Uuid
+  name             String
+  description      String
+  category         String
+  price            Decimal            @db.Decimal(12, 2)
+  imageUrl         String
+  stockQuantity    Int
+  reservedQuantity Int                @default(0)
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  cartItems        CartItem[]
+  reservations     StockReservation[]
+  orderItems       OrderItem[]
+
+  @@index([category, active])
+}
+
+model Cart {
+  id        String     @id @default(uuid()) @db.Uuid
+  userId    String     @unique @db.Uuid
+  user      User       @relation(fields: [userId], references: [id])
+  items     CartItem[]
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  cartId    String   @db.Uuid
+  productId String   @db.Uuid
+  quantity  Int
+  updatedAt DateTime @updatedAt
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+}
+
+model CheckoutSession {
+  id             String             @id @default(uuid()) @db.Uuid
+  userId         String             @db.Uuid
+  idempotencyKey String
+  status         CheckoutStatus     @default(RESERVED)
+  totalAmount    Decimal            @db.Decimal(12, 2)
+  items          Json
+  expiresAt      DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  user           User               @relation(fields: [userId], references: [id])
+  reservations   StockReservation[]
+  payment        Payment?
+  order          Order?
+
+  @@unique([userId, idempotencyKey])
+  @@index([status, expiresAt])
+}
+
+model StockReservation {
+  id                String            @id @default(uuid()) @db.Uuid
+  checkoutSessionId String            @db.Uuid
+  productId         String            @db.Uuid
+  quantity          Int
+  status            ReservationStatus @default(ACTIVE)
+  expiresAt         DateTime
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  checkout          CheckoutSession   @relation(fields: [checkoutSessionId], references: [id])
+  product           Product           @relation(fields: [productId], references: [id])
+
+  @@unique([checkoutSessionId, productId])
+  @@index([status, expiresAt])
+}
+
+model Payment {
+  id                   String          @id @default(uuid()) @db.Uuid
+  checkoutSessionId    String          @unique @db.Uuid
+  amount               Decimal         @db.Decimal(12, 2)
+  status               PaymentStatus   @default(PENDING)
+  idempotencyKey       String          @unique
+  scenario             GatewayScenario
+  transactionReference String?         @unique
+  failureReason        String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  checkout             CheckoutSession @relation(fields: [checkoutSessionId], references: [id])
+  refund               Refund?
+}
+
+model Order {
+  id                String               @id @default(uuid()) @db.Uuid
+  userId            String               @db.Uuid
+  checkoutSessionId String               @unique @db.Uuid
+  totalAmount       Decimal              @db.Decimal(12, 2)
+  status            OrderStatus          @default(CONFIRMED)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  user              User                 @relation(fields: [userId], references: [id])
+  checkout          CheckoutSession      @relation(fields: [checkoutSessionId], references: [id])
+  items             OrderItem[]
+  history           OrderStatusHistory[]
+  refund            Refund?
+
+  @@index([userId, createdAt])
+}
+
+model OrderItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  orderId     String  @db.Uuid
+  productId   String  @db.Uuid
+  productName String
+  imageUrl    String
+  unitPrice   Decimal @db.Decimal(12, 2)
+  quantity    Int
+  lineTotal   Decimal @db.Decimal(12, 2)
+  order       Order   @relation(fields: [orderId], references: [id])
+  product     Product @relation(fields: [productId], references: [id])
+}
+
+model Refund {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderId     String       @unique @db.Uuid
+  paymentId   String       @unique @db.Uuid
+  amount      Decimal      @db.Decimal(12, 2)
+  status      RefundStatus @default(PENDING)
+  reason      String
+  createdAt   DateTime     @default(now())
+  processedAt DateTime?
+  order       Order        @relation(fields: [orderId], references: [id])
+  payment     Payment      @relation(fields: [paymentId], references: [id])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
+  status    OrderStatus
+  note      String
+  createdAt DateTime    @default(now())
+  sequence  Int
+  order     Order       @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, sequence])
+}

@@ -1,0 +1,43 @@
+{
+  "name": "atelier-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "deploy": "prisma migrate deploy",
+    "seed": "node prisma/seed.js",
+    "cleanup": "node scripts/cleanup.js",
+    "test": "vitest run",
+    "test:local": "node scripts/test-local.js",
+    "db:local": "node scripts/local-db.js",
+    "db:stop": "node scripts/stop-local-db.js"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "embedded-postgres": "18.4.0-beta.17",
+    "prisma": "6.19.0",
+    "supertest": "^7.1.4",
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "effect": "^3.20.0"
+  }
+}

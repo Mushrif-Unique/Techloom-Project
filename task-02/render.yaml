@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: atelier-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run generate
+    startCommand: npm run deploy && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.11.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: RESERVATION_TTL_MINUTES
+        value: 10
+      - key: CLEANUP_INTERVAL_SECONDS
+        value: 30

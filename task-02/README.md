@@ -193,7 +193,7 @@ Checkout: RESERVED → PAYMENT_PROCESSING → COMPLETED | PAYMENT_FAILED | PAYME
 Payment:  PENDING → PROCESSING → SUCCESS | FAILED | TIMEOUT
           TIMEOUT → FAILED (reconciliation only)
 Reserve:  ACTIVE → CONSUMED | RELEASED | EXPIRED
-Order:    CONFIRMED → CANCELLED → REFUND_PENDING → REFUNDED
+Order:    CONFIRMED → CANCELLED | FAILED → REFUND_PENDING → REFUNDED
 Refund:   PENDING → PROCESSING → SUCCESS | FAILED
 ```
 
@@ -205,13 +205,18 @@ Payment, inventory consumption, order snapshot/history creation, and cart cleari
 
 ### Mock scenarios
 
-| Test card             | Outcome           | Recovery                                         |
-| --------------------- | ----------------- | ------------------------------------------------ |
-| `4242 4242 4242 4242` | Success           | One confirmed order; stock consumed              |
-| `4000 0000 0000 0002` | Declined          | Reservation released; start fresh checkout       |
-| `4000 0000 0000 9995` | Timeout / unknown | Hold reservation; reconcile the existing attempt |
+| Test card             | Outcome           | Recovery                                                                 |
+| --------------------- | ----------------- | ------------------------------------------------------------------------ |
+| `4242 4242 4242 4242` | Success           | One confirmed order; stock consumed                                      |
+| `4000 0000 0000 0002` | Declined          | Reservation released; start fresh checkout                               |
+| `4000 0000 0000 9995` | Timeout / unknown | Hold reservation; reconcile the existing attempt                         |
+| `4000 0000 0000 9987` | Paid order fails  | Successful mock charge, order failure, automatic full refund and restock |
 
 No expiry/CVV is required. These are the only accepted test values. The UI exposes named scenario buttons.
+
+Select **Paid order fails** to demonstrate a successful payment followed by simulated fulfilment failure. The payment remains `SUCCESS` with its original transaction reference; the order records `CONFIRMED → FAILED → REFUND_PENDING → REFUNDED`. A separate refund returns the full trusted payment amount and stock is restored exactly once. The payment page shows refund confirmation instead of a shipping/success message, and order detail shows the failure reason and complete timeline. Reloads and identical retries return the saved result; another payment key is rejected. Cancelling an already automatically refunded order also returns the existing result.
+
+This is a deterministic, synchronous mock: charge, order failure, compensating refund, and stock updates commit in one database transaction. It demonstrates the post-payment failure outcome without an external provider or asynchronous fulfilment worker. Real gateway integration still requires the durable reconciliation architecture described below.
 
 A timeout is **not** initially treated as a decline. It persists `TIMEOUT`, creates no order, and retains the reservation. Retrying the same key replays that state; a new key is rejected. **Check payment result** calls reconciliation, which deterministically confirms **NOT_CHARGED** for this mock scenario, changes payment/checkout to failed, and releases stock. Expiry cleanup does the same if the customer abandons the page. After reconciliation a new checkout can succeed. There is never an additional charge within the timed-out checkout.
 
@@ -219,7 +224,7 @@ This no-charge resolution is a documented property of the internal mock, not a c
 
 ## Cancellation, refund, and history
 
-Unpaid checkout cancellation releases the reservation without creating a refund. Paid orders are cancellable while `CONFIRMED`; this assessment does not model shipment/fulfilment. Cancellation restores each purchased quantity once, creates a unique full refund using the original payment amount, and records `CANCELLED`, `REFUND_PENDING`, and `REFUNDED` history rows in sequence. The mock refund succeeds synchronously. Duplicate or concurrent cancellations replay the refunded result without touching inventory again.
+Unpaid checkout cancellation releases the reservation without creating a refund. Paid orders are cancellable while `CONFIRMED`; this assessment simulates fulfilment failure but does not model real shipment. Cancellation and automatic paid-order failure share a transactional refund helper. Each restores purchased stock once, creates a unique full refund using the original payment amount, and records either `CANCELLED` or `FAILED`, followed by `REFUND_PENDING` and `REFUNDED`. The mock refund succeeds synchronously. Duplicate or concurrent cancellations replay the refunded result without touching inventory again.
 
 All order status transitions have timestamps and a monotonically ordered sequence. Order detail also shows checkout/reservation and successful-payment timestamps. Refund information and payment references are visible only to the owner.
 
@@ -295,7 +300,7 @@ Tests cover authentication, filters, validation, cart edits, atomic checkout, in
 
 ## Deployment
 
-Local checks are complete as recorded in the verification document; public hosting and remote smoke tests are a separate step. Commit all three `package-lock.json` files with the source, the two Prisma migrations, local image assets, `render.yaml`, and `frontend/vercel.json`. Keep `.env`, `.local`, `node_modules`, `dist`, and `test-results` out of the repository. If this app is pushed inside a larger repository, set each platform's root directory to the actual path to `backend` or `frontend` in that repository.
+Local checks are complete as recorded in the verification document; public hosting and remote smoke tests are a separate step. Commit all three `package-lock.json` files with the source, all three Prisma migrations, local image assets, `render.yaml`, and `frontend/vercel.json`. Keep `.env`, `.local`, `node_modules`, `dist`, and `test-results` out of the repository. If this app is pushed inside a larger repository, set each platform's root directory to the actual path to `backend` or `frontend` in that repository.
 
 Prepare a managed PostgreSQL URL, an API URL, and the final frontend origin. The native local database helper is for development/tests; hosted services use `DATABASE_URL` for the managed database. Update both `VITE_API_URL` and `FRONTEND_URL` for the hosted origins, then run the remote smoke checks below before calling deployment complete.
 
@@ -322,7 +327,7 @@ See [Vercel's Vite documentation](https://vercel.com/docs/frameworks/frontend/vi
 
 ## Assumptions and boundaries
 
-- Exact-brief audit: refunds for cancelled paid orders are implemented. A separate failure after successful payment and its compensating refund are not modeled; decline is an uncharged payment and timeout resolves to no charge. This remaining coverage gap is tracked in [requirement coverage](docs/REQUIREMENTS.md), alongside pending public deployment.
+- Exact-brief audit: refunds for both cancelled paid orders and simulated failed paid orders are implemented. Decline is uncharged; timeout resolves to no charge. Public deployment remains pending; see [requirement coverage](docs/REQUIREMENTS.md).
 - Currency is USD. Delivery and tax are zero in this assessment; the server returns the complete total.
 - Products represent single SKUs. Clothing has a documented standard fit; variants, addresses, real delivery, admin inventory management, and fulfilment are outside this assignment.
 - Every confirmed order remains refundable because shipment is not modeled. Refund simulation is full-only and synchronous.

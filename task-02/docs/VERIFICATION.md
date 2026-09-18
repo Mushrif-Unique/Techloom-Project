@@ -1,13 +1,23 @@
 # Verification record
 
-Executed locally on 2026-09-17 with Node.js 24.11.0, native PostgreSQL 18.4, Prisma 6.19.0, Vitest 4.1.11, and Vite 7.3.6.
+Latest verification: 2026-09-18, with Node.js 24.11.0, native PostgreSQL 18.4, Prisma 6.19.0, Vitest 4.1.11, and Vite 7.3.6. Earlier checks below retain their original dates.
+
+## Paid-order failure and automatic refund — 2026-09-18
+
+The requirement gap is closed by the **Paid order fails** mock scenario (`4000 0000 0000 9987`). It records a successful payment followed by `CONFIRMED → FAILED → REFUND_PENDING → REFUNDED` order history, a separate full refund, and exactly-once stock restoration. Cancellation and automatic failure use the same transactional refund helper. This is a synchronous deterministic simulation, not an external gateway or asynchronous fulfilment integration.
+
+- **37/37 integration tests passed**, 67.93 seconds. Four new cases cover multi-SKU/quantity totals and restoration, concurrent payment replay, cancellation after automatic refund, and ownership. All original cancellation, expiry, timeout, and duplicate-charge tests still pass.
+- Production build, Prisma schema validation, and migration status passed; all **three** migrations are applied to the development database and the isolated test database.
+- The original browser regression flow and its **48 viewport checks** passed again. The new scenario passed **16 additional viewport checks** covering scenario selection, refund confirmation, order detail, and order history at 320, 390, 768, and 1440px. No horizontal overflow or uncaught browser JavaScript errors occurred.
+- The browser verified payment `SUCCESS`, order `REFUNDED`, exact stock restoration, an empty cart, persisted confirmation after reload, the failure/refund reason and timeline, and no cancellation button on the refunded order. The narrow refund confirmation screenshot was visually reviewed.
+- README and requirement coverage now describe the fourth scenario and the migration. Only public deployment and hosted verification remain pending.
 
 ## Automated checks
 
-- `npm run test:local` from the project root: **33 tests passed, 1 test file passed**, exit 0. Latest recorded run duration: 62.60 seconds. The runner uses a separate PostgreSQL database on port 55433, applies committed migrations, exercises real concurrent HTTP requests through Supertest, and shuts down the native database.
+- `npm run test:local` from the project root: **37 tests passed, 1 test file passed**, exit 0. Latest recorded run duration: 67.93 seconds. The runner uses a separate PostgreSQL database on port 55433, applies committed migrations, exercises real concurrent HTTP requests through Supertest, and shuts down the native database.
 - `npm run build` from the project root: **passed**, 1,656 modules transformed. Output is `frontend/dist`.
 - `npx prisma validate`: **passed**.
-- `npx prisma migrate status`: **database schema is up to date**, both migrations applied.
+- `npx prisma migrate status`: **database schema is up to date**, all three migrations applied.
 - `npm run seed`: **passed** for twenty products, including a second invocation that preserves inventory and prices.
 - Backend startup: **passed**, listening on port 4000. `GET /api/health` returned HTTP 200 with `{ "success": true, "data": { "status": "ok" } }` against PostgreSQL.
 - Fresh `npm audit` runs for the root, backend, and frontend: **zero reported vulnerabilities** in all three dependency trees.

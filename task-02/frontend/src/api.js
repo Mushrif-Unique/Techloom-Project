@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { unwrapResponse } from './api-response';
 export const api = axios.create({
   // Local requests stay on the browser's origin; Vite forwards them to the API.
   baseURL: import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_URL || '/api',
@@ -10,7 +11,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 api.interceptors.response.use(
-  (response) => response.data.data,
+  (response) => unwrapResponse(response.data),
   (error) => {
     if (error.response?.status === 401 && !error.config.url.startsWith('/auth/'))
       window.dispatchEvent(new Event('session-expired'));

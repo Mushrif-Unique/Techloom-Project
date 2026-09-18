@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Search, SlidersHorizontal, Plus } from 'lucide-react';
 import { api, money } from '../api';
+import { isCatalog } from '../api-response';
 import { useStore } from '../context';
 import { useResource, Loading, ErrorBox, Empty, ProductImage, Benefits } from '../components';
 export default function Catalog() {
@@ -196,8 +197,11 @@ export default function Catalog() {
         )}
         {loading ? (
           <Loading />
-        ) : error ? (
-          <ErrorBox message={error} retry={reload} />
+        ) : error || !isCatalog(data) ? (
+          <ErrorBox
+            message={error || 'The store returned an invalid product list. Please try again.'}
+            retry={reload}
+          />
         ) : (
           <>
             <div className="results-label">{data.total} considered essentials</div>
